@@ -1,0 +1,41 @@
+services:
+  embedding_api:
+    build:
+      context: ./embeddings
+      dockerfile: Dockerfile
+    container_name: embedding_api
+    ports:
+      - "8001:8001"
+    networks:
+      - weaviate_net
+  
+  processor_api:
+    build:
+      context: ./document-processor
+      dockerfile: Dockerfile
+    container_name: processor_api
+    ports:
+      - "8002:8002"
+    networks:
+      - weaviate_net
+
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.32.9
+    container_name: weaviate
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      ENABLE_MODULES: "text2vec-transformers"
+      TRANSFORMERS_INFERENCE_API: "http://embedding_api:8001"
+      DEFAULT_VECTORIZER_MODULE: "text2vec-transformers"
+    depends_on:
+      - embedding_api
+      - processor_api
+    networks:
+      - weaviate_net
+
+networks:
+  weaviate_net:
+    driver: bridge
