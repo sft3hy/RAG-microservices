@@ -14,7 +14,7 @@ weav_manager = WeaviateManager()
 # --- Configuration ---
 # Set the API endpoint URL from an environment variable for flexibility,
 # with a local default for development.
-PROCESSING_URL = "http://127.0.0.1:8002"
+PROCESSING_URL = "http://localhost:8002"
 PROCESS_DOCUMENT_ENDPOINT = f"{PROCESSING_URL}/process-document/"
 
 # --- Logger Setup ---
@@ -67,7 +67,8 @@ def process_document_upload(uploaded_file, components, settings, user_id):
             try:
                 for parent_with_children in structured_chunks:
                     # Separate the children from the parent data
-                    child_chunks_data = parent_with_children.pop("child_chunks")
+                    child_chunks_data = parent_with_children["child_chunks"]
+                    print("total children:", len(child_chunks_data))
                     parent_uuid = weav_manager.insert_parent_chunk(
                         document_id=parent_with_children["document_id"],
                         user_id=parent_with_children["user_id"],
@@ -80,8 +81,10 @@ def process_document_upload(uploaded_file, components, settings, user_id):
                     for child_chunk in child_chunks_data:
                         child_chunk["parent_chunk_id"] = parent_uuid
 
-                # Add the processed children to a list for batch insertion
-                all_child_chunks_for_batch.extend(child_chunks_data)
+                    # Add the processed children to a list for batch insertion
+                    all_child_chunks_for_batch.extend(child_chunks_data)
+
+                print("total child chunks to insert:", len(all_child_chunks_for_batch))
 
                 # Batch insert all the child chunks for the document at once
                 if all_child_chunks_for_batch:
@@ -95,9 +98,9 @@ def process_document_upload(uploaded_file, components, settings, user_id):
 
             except Exception as e:
                 logging.error(f"Failed to process document ID {document_id}: {e}")
-            finally:
-                # 7. Close the Weaviate client connection
-                weav_manager.close()
+            # finally:
+            # 7. Close the Weaviate client connection
+            # weav_manager.close()
 
             # Mark document as fully processed
             components["doc_ops"].mark_document_processed(document_id)

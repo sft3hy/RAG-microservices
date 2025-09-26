@@ -10,7 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install system dependencies (for numpy, sentence-transformers, etc.)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends curl\
     build-essential \
     git \
     && rm -rf /var/lib/apt/lists/*
@@ -28,7 +28,7 @@ COPY . .
 EXPOSE $PORT
 
 # Healthcheck (optional, good for Kubernetes/Helm)
-HEALTHCHECK CMD curl --fail http://127.0.0.1:${PORT}/docs || exit 1
+HEALTHCHECK CMD curl --fail http://localhost:${PORT}/docs || exit 1
 
 # Run as non-root user
 RUN useradd -m appuser

@@ -8,7 +8,7 @@ import streamlit as st
 # Import project modules
 from config.settings import settings
 from rag.chunking import DocumentChunker
-from rag.retrieval import EnhancedMultiQueryRAGRetriever
+from rag.retrieval import WeaviateRetriever
 from database.weav_operations import WeaviateManager
 
 if settings.TEST == "True":
@@ -56,7 +56,7 @@ def initialize_system():
         user_ops = UserOperations(db_manager)
 
         # Microservice-based components
-        document_processor = DocumentProcessorClient(base_url="http://localhost:8001")
+        document_processor = DocumentProcessorClient(base_url="http://localhost:8002")
 
         # Local components
         document_chunker = DocumentChunker(
@@ -68,8 +68,8 @@ def initialize_system():
         llm_client = LLMClient()
 
         # Retrieval system
-        retriever = EnhancedMultiQueryRAGRetriever(
-            WeaviateManager(), llm_client, settings
+        retriever = WeaviateRetriever(
+            WeaviateManager(), config=settings, llm_client=llm_client
         )
 
         logger.info("System initialized successfully")

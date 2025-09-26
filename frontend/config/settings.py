@@ -8,6 +8,8 @@ class Settings:
     # API Keys
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+    EMBEDDING_API_URL = "http://localhost:8001/embed"
+
     # Model Configuration
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     LLM_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
@@ -23,7 +25,7 @@ class Settings:
     FILTERED_CHILD_CHUNKS = 150
     PARENT_CHUNKS_COUNT = 20
     FINAL_CHUNKS_COUNT = 30
-    MIN_RELEVANCE_SCORE = 0.1
+    MIN_RELEVANCE_SCORE = 0.3
 
     # Database
     DATABASE_PATH = "data/rag_database.db"

@@ -201,7 +201,7 @@ def display_sidebar_jira_interface(components, settings):
         # Quick search buttons
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("My Open Issues", use_container_width=True):
+            if st.button("My Open Issues", width="stretch"):
                 jql = (
                     "assignee = currentUser() AND status != Done ORDER BY updated DESC"
                 )
@@ -211,7 +211,7 @@ def display_sidebar_jira_interface(components, settings):
                     st.rerun()
 
         with col2:
-            if st.button("Recent Issues", use_container_width=True):
+            if st.button("Recent Issues", width="stretch"):
                 jql = (
                     "assignee = currentUser() AND updated >= -7d ORDER BY updated DESC"
                 )
@@ -227,7 +227,7 @@ def display_sidebar_jira_interface(components, settings):
             height=80,
         )
 
-        if st.button("Search", use_container_width=True) and jql_query:
+        if st.button("Search", width="stretch") and jql_query:
             with st.spinner("Searching..."):
                 new_issues = connector.search_issues(jql_query, 30)
                 st.session_state.jira_issues = new_issues
@@ -242,7 +242,7 @@ def display_sidebar_jira_interface(components, settings):
         with st.expander(f"📝 Select Issues ({len(issues)} loaded)", expanded=True):
             # Clear selections button
             if selected_issues:
-                if st.button("Clear All Selections", use_container_width=True):
+                if st.button("Clear All Selections", width="stretch"):
                     st.session_state.jira_selected_issues = {}
                     st.rerun()
 
@@ -292,9 +292,7 @@ def display_sidebar_jira_interface(components, settings):
                 key="sidebar_analysis_type",
             )
 
-            if st.button(
-                "Analyze Selected Issues", type="primary", use_container_width=True
-            ):
+            if st.button("Analyze Selected Issues", type="primary", width="stretch"):
                 # Create analysis prompt and add to chat
                 analysis_prompt = create_analysis_prompt(selected_issues, analysis_type)
 
@@ -612,7 +610,7 @@ def display_sidebar(components, settings):
                 if len(user_docs) > 10:
                     st.caption(f"... and {len(user_docs) - 10} more documents")
             else:
-                st.info("No documents uploaded yet.")
+                st.info("No documents uploaded.")
         except Exception as e:
             st.error(f"Error loading documents: {e}")
 

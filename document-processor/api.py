@@ -134,3 +134,19 @@ async def process_document(file: UploadFile = File(...)) -> Dict[str, Any]:
 @app.get("/")
 def hello():
     return "Hello, World!"
+
+
+# -------------------------
+# Health Check Endpoints (Required by Weaviate)
+# -------------------------
+@app.get("/.well-known/ready")
+def ready():
+    """
+    Health check endpoint that Weaviate uses to verify the service is ready.
+    """
+    if processor is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The document processing engine is not available. Please check server logs.",
+        )
+    return {"ready": True}

@@ -8,7 +8,7 @@ import json
 
 # The URL where your FastAPI application is running.
 # This assumes you are running it locally on the default port.
-API_URL = "http://127.0.0.1:8002/process-document/"
+API_URL = "http://localhost:8002/process-document/"
 
 # The path to the test document.
 # This constructs a path relative to the location of this script.

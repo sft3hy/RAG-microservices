@@ -23,11 +23,17 @@ logger = logging.getLogger("embedding_api")
 # -------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Load the model
+    # Initialize the manager
     global embedding_manager
     embedding_manager = EmbeddingManager(model_name="all-MiniLM-L6-v2")
-    logger.info("EmbeddingManager initialized (lazy loading until first encode).")
+
+    # Eagerly load the model at startup by encoding a dummy text
+    logger.info("Warming up the embedding model...")
+    embedding_manager.encode(["Pre-warming the model at startup."])
+    logger.info("Embedding model loaded and ready.")
+
     yield
+
     # Clean up the model and release the resources
     logger.info("Shutting down API.")
 
@@ -110,7 +116,7 @@ def embed(request: EmbeddingRequest):
         raise HTTPException(status_code=400, detail="No texts provided.")
 
     try:
-        vectors = embedding_manager.encode(request.texts)  # lazy load on first use
+        vectors = embedding_manager.encode(request.texts)
         embeddings = vectors.tolist()
         dim = embedding_manager.get_embedding_dimension()
 
@@ -164,10 +170,7 @@ def get_meta():
     Metadata endpoint that Weaviate calls to get model information.
     """
     try:
-        # Initialize embedding manager if not already done (lazy loading)
-        if embedding_manager.model is None:
-            embedding_manager.encode(["test"])  # This will load the model
-
+        # The model is now eagerly loaded at startup, so no check is needed here.
         dimension = embedding_manager.get_embedding_dimension()
 
         return {
@@ -270,6 +273,11 @@ def test_embedding():
     except Exception as e:
         logger.error(f"Test embedding failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
+
+
+# @app.get("/embed/.well-known/ready")
+# def test_embedding():
+#     return {}
 
 
 @app.get("/")

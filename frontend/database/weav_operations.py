@@ -2,13 +2,14 @@ import weaviate
 import weaviate.classes.config as wc
 from weaviate.classes.config import Configure, Property, DataType
 from weaviate.classes.query import Filter, MetadataQuery
-import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
-import json
+from typing import List, Dict, Any, Optional
 import os
 import logging
 from datetime import datetime, timezone
 from config.settings import settings
+import requests
+import traceback
+from weaviate.classes.data import DataObject
 
 
 class WeaviateManager:
@@ -22,11 +23,6 @@ class WeaviateManager:
     ):
         """
         Initialize Weaviate client and setup collections.
-
-        Args:
-            weaviate_url: Weaviate instance URL (defaults to env var WEAVIATE_URL)
-            weaviate_api_key: Weaviate API key (defaults to env var WEAVIATE_API_KEY)
-            openai_api_key: OpenAI API key for vectorization (defaults to env var OPENAI_API_KEY)
         """
         self.weaviate_host = os.getenv("WEAVIATE_HOST")
         self.weaviate_port = int(os.getenv("WEAVIATE_PORT", "8080"))
@@ -79,17 +75,10 @@ class WeaviateManager:
                         Property(name="file_type", data_type=DataType.TEXT),
                         Property(name="created_at", data_type=DataType.DATE),
                     ],
-                    # Configure the vectorizer for the Hugging Face model
-                    vectorizer_config=Configure.Vectorizer.text2vec_transformers(
-                        # Point to your custom embedding API endpoint
-                        inference_url="http://embedding_api:8001/embed",
-                        # Optional: specify model-related options
-                        pooling_strategy="masked_mean",
-                    ),
-                    vector_index_config=Configure.VectorIndex.hnsw(
-                        distance_metric=wc.VectorDistances.COSINE,
-                        ef_construction=200,
-                        max_connections=64,
+                    vector_config=Configure.Vectors.text2vec_transformers(
+                        name="parent_chunk_vector",
+                        source_properties="chunk_text",
+                        inference_url=settings.EMBEDDING_API_URL,
                     ),
                 )
                 self.logger.info(f"Created collection: {self.parent_collection_name}")
@@ -111,17 +100,10 @@ class WeaviateManager:
                         Property(name="file_type", data_type=DataType.TEXT),
                         Property(name="created_at", data_type=DataType.DATE),
                     ],
-                    # Configure the vectorizer for the Hugging Face model
-                    vectorizer_config=Configure.Vectorizer.text2vec_transformers(
-                        # Point to your custom embedding API endpoint
-                        inference_url="http://embedding_api:8001/embed",
-                        # Optional: specify model-related options
-                        pooling_strategy="masked_mean",
-                    ),
-                    vector_index_config=Configure.VectorIndex.hnsw(
-                        distance_metric=wc.VectorDistances.COSINE,
-                        ef_construction=200,
-                        max_connections=64,
+                    vector_config=Configure.Vectors.text2vec_transformers(
+                        name="child_chunk_vector",
+                        source_properties="chunk_text",
+                        inference_url=settings.EMBEDDING_API_URL,
                     ),
                 )
                 self.logger.info(f"Created collection: {self.child_collection_name}")
@@ -156,22 +138,42 @@ class WeaviateManager:
             UUID of the created chunk
         """
         try:
+            self._connect()
             collection = self.client.collections.get(self.parent_collection_name)
+            payload = {"texts": [chunk_text]}
 
-            chunk_data = {
-                "document_id": document_id,
-                "user_id": user_id,
-                "chunk_text": chunk_text,
-                "contextual_header": contextual_header,
-                "chunk_index": chunk_index,
-                "document_name": document_name,
-                "file_type": file_type,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
+            response = requests.post(url=settings.EMBEDDING_API_URL, json=payload)
 
-            uuid = collection.data.insert(chunk_data)
-            self.logger.info(f"Inserted parent chunk {uuid} for document {document_id}")
-            return str(uuid)
+            if response.status_code == 200:
+                embedding_data = response.json()
+                print("✅ Success! Got embeddings:")
+                print(f"Embedding dimension: {embedding_data['dimension']}")
+                print(f"Number of embeddings: {len(embedding_data['embeddings'])}")
+                print(
+                    f"First embedding (truncated): {embedding_data['embeddings'][0][:10]} ..."
+                )
+                chunk_data = {
+                    "document_id": document_id,
+                    "user_id": user_id,
+                    "chunk_text": chunk_text,
+                    "contextual_header": contextual_header,
+                    "chunk_index": chunk_index,
+                    "document_name": document_name,
+                    "file_type": file_type,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+
+                uuid = collection.data.insert(
+                    properties=chunk_data, vector=embedding_data["embeddings"][0]
+                )
+                self.logger.info(
+                    f"Inserted parent chunk {uuid} for document {document_id}"
+                )
+                return str(uuid)
+            else:
+                print(
+                    f"❌ Embedding API failed with status {response.status_code}: {response.text}"
+                )
 
         except Exception as e:
             self.logger.error(f"Failed to insert parent chunk: {e}")
@@ -206,23 +208,40 @@ class WeaviateManager:
         """
         try:
             collection = self.client.collections.get(self.child_collection_name)
+            payload = {"texts": [chunk_text]}
 
-            chunk_data = {
-                "document_id": document_id,
-                "user_id": user_id,
-                "parent_chunk_id": parent_chunk_id,
-                "chunk_text": chunk_text,
-                "contextual_header": contextual_header,
-                "chunk_index": chunk_index,
-                "document_name": document_name,
-                "file_type": file_type,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
+            response = requests.post(url=settings.EMBEDDING_API_URL, json=payload)
+            if response.status_code == 200:
+                embedding_data = response.json()
+                print("✅ Success! Got embeddings:")
+                print(f"Embedding dimension: {embedding_data['dimension']}")
+                print(f"Number of embeddings: {len(embedding_data['embeddings'])}")
+                print(
+                    f"First embedding (truncated): {embedding_data['embeddings'][0][:10]} ..."
+                )
+                chunk_data = {
+                    "document_id": document_id,
+                    "user_id": user_id,
+                    "parent_chunk_id": parent_chunk_id,
+                    "chunk_text": chunk_text,
+                    "contextual_header": contextual_header,
+                    "chunk_index": chunk_index,
+                    "document_name": document_name,
+                    "file_type": file_type,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
 
-            uuid = collection.data.insert(chunk_data)
-            self.logger.info(f"Inserted child chunk {uuid} for document {document_id}")
-            return str(uuid)
-
+                uuid = collection.data.insert(
+                    properties=chunk_data, vector=embedding_data["embeddings"]
+                )
+                self.logger.info(
+                    f"Inserted child chunk {uuid} for document {document_id}"
+                )
+                return str(uuid)
+            else:
+                print(
+                    f"❌ Embedding API failed with status {response.status_code}: {response.text}"
+                )
         except Exception as e:
             self.logger.error(f"Failed to insert child chunk: {e}")
             raise
@@ -267,18 +286,46 @@ class WeaviateManager:
 
                 batch_data.append(chunk_data)
 
-            # Insert batch
-            result = collection.data.insert_many(batch_data)
+            # Generate embeddings for all chunks
+            payload = {"texts": [chunk["chunk_text"] for chunk in chunks]}
 
-            uuids = [str(uuid) for uuid in result.uuids]
-            self.logger.info(f"Batch inserted {len(uuids)} {chunk_type} chunks")
+            response = requests.post(url=settings.EMBEDDING_API_URL, json=payload)
+            if response.status_code == 200:
+                embedding_data = response.json()
+                print("✅ Success! Got embeddings:")
+                print(f"Embedding dimension: {embedding_data['dimension']}")
+                print(f"Number of embeddings: {len(embedding_data['embeddings'])}")
+                print(
+                    f"First embedding (truncated): {embedding_data['embeddings'][0][:10]} ..."
+                )
 
-            if result.errors:
-                self.logger.warning(f"Batch insert had {len(result.errors)} errors")
-                for error in result.errors:
-                    self.logger.error(f"Batch insert error: {error}")
+                # Create DataObjects with vectors for batch insertion
+                from weaviate.classes.data import DataObject
 
-            return uuids
+                data_objects = []
+                for i, (properties, embedding) in enumerate(
+                    zip(batch_data, embedding_data["embeddings"])
+                ):
+                    data_obj = DataObject(properties=properties, vector=embedding)
+                    data_objects.append(data_obj)
+
+                # Insert batch with vectors
+                result = collection.data.insert_many(data_objects)
+
+                uuids = [str(uuid) for uuid in result.uuids]
+                self.logger.info(f"Batch inserted {len(uuids)} {chunk_type} chunks")
+
+                if result.errors:
+                    self.logger.warning(f"Batch insert had {len(result.errors)} errors")
+                    for error in result.errors:
+                        self.logger.error(f"Batch insert error: {error}")
+
+                return uuids
+            else:
+                print(
+                    f"❌ Embedding API failed with status {response.status_code}: {response.text}"
+                )
+                return []
 
         except Exception as e:
             self.logger.error(f"Failed to batch insert chunks: {e}")
@@ -291,7 +338,7 @@ class WeaviateManager:
         limit: int = 10,
         chunk_type: str = "child",
         document_ids: Optional[List[int]] = None,
-        min_score: float = 0.7,
+        min_score: float = 0.01,
     ) -> List[Dict[str, Any]]:
         """
         Search for similar chunks using vector similarity.
@@ -324,46 +371,56 @@ class WeaviateManager:
                 )
                 where_filter = where_filter & doc_filter
 
-            # Perform vector search
-            response = collection.query.near_text(
-                query=query_text,
-                limit=limit,
-                where=where_filter,
-                return_metadata=MetadataQuery(score=True, explain_score=True),
+            embedded_query = requests.post(
+                url=settings.EMBEDDING_API_URL, json={"texts": [query_text]}
             )
+            if embedded_query.status_code == 200:
+                # Perform vector search
+                response = collection.query.hybrid(
+                    query=query_text,
+                    limit=limit,
+                    filters=where_filter,
+                    return_metadata=MetadataQuery(score=True, explain_score=True),
+                    vector=embedded_query.json()["embeddings"][0],
+                )
 
-            # Process results
-            results = []
-            for obj in response.objects:
-                score = obj.metadata.score if obj.metadata.score else 0.0
+                # Process results
+                results = []
+                for obj in response.objects:
+                    score = obj.metadata.score if obj.metadata.score else 0.0
 
-                # Filter by minimum score
-                if score < min_score:
-                    continue
+                    # Filter by minimum score
+                    if score < min_score:
+                        continue
 
-                result = {
-                    "chunk_id": str(obj.uuid),
-                    "chunk_text": obj.properties.get("chunk_text", ""),
-                    "contextual_header": obj.properties.get("contextual_header", ""),
-                    "document_id": obj.properties.get("document_id"),
-                    "document_name": obj.properties.get("document_name", ""),
-                    "chunk_index": obj.properties.get("chunk_index"),
-                    "score": score,
-                    "chunk_type": chunk_type,
-                }
+                    result = {
+                        "chunk_id": str(obj.uuid),
+                        "chunk_text": obj.properties.get("chunk_text", ""),
+                        "contextual_header": obj.properties.get(
+                            "contextual_header", ""
+                        ),
+                        "document_id": obj.properties.get("document_id"),
+                        "document_name": obj.properties.get("document_name", ""),
+                        "chunk_index": obj.properties.get("chunk_index"),
+                        "score": score,
+                        "chunk_type": chunk_type,
+                    }
 
-                if chunk_type == "child":
-                    result["parent_chunk_id"] = obj.properties.get("parent_chunk_id")
+                    if chunk_type == "child":
+                        result["parent_chunk_id"] = obj.properties.get(
+                            "parent_chunk_id"
+                        )
 
-                results.append(result)
+                    results.append(result)
 
-            self.logger.info(
-                f"Found {len(results)} similar {chunk_type} chunks for query"
-            )
-            return results
+                self.logger.info(
+                    f"Found {len(results)} similar {chunk_type} chunks for query"
+                )
+                return results
 
         except Exception as e:
             self.logger.error(f"Failed to search similar chunks: {e}")
+            traceback.print_exc()
             raise
 
     def get_chunk_by_id(
@@ -712,48 +769,48 @@ def test_weaviate_operations():
     weaviate_manager = WeaviateManager()
 
     try:
-        # Test inserting parent chunk
-        parent_id = weaviate_manager.insert_parent_chunk(
-            document_id=1,
-            user_id="test@example.com",
-            chunk_text="This is a parent chunk containing overview information.",
-            contextual_header="Document Overview",
-            chunk_index=0,
-            document_name="test_document.pdf",
-            file_type="pdf",
-        )
-        print(f"Inserted parent chunk: {parent_id}")
+        # # Test inserting parent chunk
+        # parent_id = weaviate_manager.insert_parent_chunk(
+        #     document_id=1,
+        #     user_id="test@example.com",
+        #     chunk_text="This is a parent chunk containing overview information.",
+        #     contextual_header="Document Overview",
+        #     chunk_index=0,
+        #     document_name="test_document.pdf",
+        #     file_type="pdf",
+        # )
+        # print(f"Inserted parent chunk: {parent_id}")
 
-        # Test inserting child chunks
-        child_chunks = [
-            {
-                "document_id": 1,
-                "user_id": "test@example.com",
-                "parent_chunk_id": parent_id,
-                "chunk_text": "This is the first child chunk with detailed information.",
-                "contextual_header": "Document Overview - Detail 1",
-                "chunk_index": 1,
-                "document_name": "test_document.pdf",
-                "file_type": "pdf",
-            },
-            {
-                "document_id": 1,
-                "user_id": "test@example.com",
-                "parent_chunk_id": parent_id,
-                "chunk_text": "This is the second child chunk with more specific details.",
-                "contextual_header": "Document Overview - Detail 2",
-                "chunk_index": 2,
-                "document_name": "test_document.pdf",
-                "file_type": "pdf",
-            },
-        ]
+        # # Test inserting child chunks
+        # child_chunks = [
+        #     {
+        #         "document_id": 1,
+        #         "user_id": "test@example.com",
+        #         "parent_chunk_id": parent_id,
+        #         "chunk_text": "This is the first child chunk with detailed information.",
+        #         "contextual_header": "Document Overview - Detail 1",
+        #         "chunk_index": 1,
+        #         "document_name": "test_document.pdf",
+        #         "file_type": "pdf",
+        #     },
+        #     {
+        #         "document_id": 1,
+        #         "user_id": "test@example.com",
+        #         "parent_chunk_id": parent_id,
+        #         "chunk_text": "This is the second child chunk with more specific details.",
+        #         "contextual_header": "Document Overview - Detail 2",
+        #         "chunk_index": 2,
+        #         "document_name": "test_document.pdf",
+        #         "file_type": "pdf",
+        #     },
+        # ]
 
-        child_ids = weaviate_manager.batch_insert_chunks(child_chunks, "child")
-        print(f"Inserted child chunks: {child_ids}")
+        # child_ids = weaviate_manager.batch_insert_chunks(child_chunks, "child")
+        # print(f"Inserted child chunks: {child_ids}")
 
         # Test searching
         results = weaviate_manager.search_similar_chunks(
-            query_text="detailed information", user_id="test@example.com", limit=5
+            query_text="cusp", user_id="smaueltown@gmail.com", limit=5
         )
         print(f"Search results: {len(results)} chunks found")
         for result in results:

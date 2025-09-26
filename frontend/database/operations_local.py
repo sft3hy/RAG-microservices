@@ -160,7 +160,11 @@ class QueryOperations:
         cursor = conn.cursor()
 
         # Convert sources to JSON string
-        sources_json = json.dumps(answer_sources)
+        # print("ANSWER SOURCES", answer_sources)
+        sources_json = json.dumps(
+            answer_sources,
+            default=lambda o: (o.isoformat() if isinstance(o, datetime) else str(o)),
+        )
 
         cursor.execute(
             """

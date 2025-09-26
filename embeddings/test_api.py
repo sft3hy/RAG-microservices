@@ -1,7 +1,7 @@
 # test_api.py
 import requests
 
-API_URL = "http://127.0.0.1:8001/embed"
+API_URL = "http://localhost:8001/embed"
 
 
 def test_embedding():
